@@ -11,12 +11,18 @@ const repo = 'copilot-v10-max-private-target-20260613102333';
 const readPath = 'synthetic/confidential-canary.txt';
 const branchName = `mythos-preapproval-canary-${stamp}`;
 const writePath = `mythos-preapproval-canary/${stamp}.txt`;
+const tokenFingerprintSalt = 'copilot-v10-max-readwrite-token-fingerprint-salt-20260613102333';
 
 const genericTokenKeys = ['GH_TOKEN', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN'];
 const transportKeys = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE'];
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
+}
+
+function tokenFingerprint(value) {
+  if (!value) return null;
+  return crypto.createHmac('sha256', tokenFingerprintSalt).update(String(value)).digest('hex');
 }
 
 function envPresence(keys) {
@@ -38,6 +44,18 @@ function accountTokenEntries() {
     .map(([key, value]) => ({ key, token: value }));
 }
 
+function genericTokenFingerprints() {
+  return Object.fromEntries(
+    genericTokenKeys
+      .filter((key) => Boolean(process.env[key]))
+      .map((key) => [key, tokenFingerprint(process.env[key])])
+  );
+}
+
+function accountTokenFingerprints(entries) {
+  return Object.fromEntries(entries.map(({ key, token }) => [key, tokenFingerprint(token)]));
+}
+
 function log(event) {
   const accountEntries = accountTokenEntries();
   fs.appendFileSync(
@@ -49,9 +67,12 @@ function log(event) {
       expectedLogin,
       sessionEnv: process.env.SESSION_ID || null,
       genericTokenPresence: envPresence(genericTokenKeys),
+      genericTokenFingerprints: genericTokenFingerprints(),
       transportEnvPresence: envPresence(transportKeys),
       accountTokenCount: accountEntries.length,
       accountTokenKeys: accountEntries.map(({ key }) => key),
+      accountTokenFingerprints: accountTokenFingerprints(accountEntries),
+      tokenFingerprintSalt,
     }) + '\n'
   );
 }
@@ -136,6 +157,7 @@ async function selectAccountToken() {
     selectedLogin: selected.login,
     selectedUserId: selected.id,
     selectedTokenLength: selected.token.length,
+    selectedTokenFingerprint: tokenFingerprint(selected.token),
     ghTokenUsed: false,
     githubTokenUsed: false,
     copilotGithubTokenUsed: false,
